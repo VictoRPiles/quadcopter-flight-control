@@ -16,12 +16,13 @@ float pot_roll;
  * @return The analog value of the potentiometer
  */
 float read_potentiometer(const int channel) {
-    ADMUX = (1 << REFS0) | (channel & 0x0F); /* AVCC as reference, select ADC channel */
-    ADCSRA |= (1 << ADSC); /* Start conversion */
-    while (ADCSRA & (1 << ADSC)); /* Wait for conversion to finish */
+	ADMUX = (1 << REFS0) | (channel & 0x0F); /* AVCC as reference, select ADC channel */
+	ADCSRA |= (1 << ADSC); /* Start conversion */
+	while (ADCSRA & (1 << ADSC)) /* Wait for conversion to finish */
+		;
 
-    int value = ADCL + (ADCH << 8); /* Combine 10-bit result */
-    return value;
+	int value = ADCL + (ADCH << 8); /* Combine 10-bit result */
+	return value;
 }
 
 /**
@@ -30,9 +31,7 @@ float read_potentiometer(const int channel) {
  * @param value Analog value
  * @return Analog value scaled to percentage
  */
-float scale_adc_to_percent(const float value) {
-    return ((float) value / 1023.0f) * 100.0f;
-}
+float scale_adc_to_percent(const float value) { return ((float) value / 1023.0f) * 100.0f; }
 
 /**
  * Constrain the resolution of a value within a range
@@ -43,63 +42,63 @@ float scale_adc_to_percent(const float value) {
  * @return A value inside the limits
  */
 float clamp(const float x, const float min_val, const float max_val) {
-    return (x < min_val) ? min_val : (x > max_val) ? max_val : x;
+	return (x < min_val) ? min_val : (x > max_val) ? max_val : x;
 }
 
 // TODO: FIX THIS TWO
 void control_altitude(const int nominal_speed_percentage) {
-    /* Clamp input to [0, 100] */
-    const int percent = (int) clamp(nominal_speed_percentage, 0, 100);
-    /* Scale by 100 -> Avoid using floating point */
-    const int16_t climb = ((percent - 50) * 2);
-    /* Rescale */
-    altitude += (float) climb * 0.01f;
-    /* Clamp altitude */
-    altitude = clamp(altitude, altitude_min, altitude_max);
+	/* Clamp input to [0, 100] */
+	const int percent = (int) clamp(nominal_speed_percentage, 0, 100);
+	/* Scale by 100 -> Avoid using floating point */
+	const int16_t climb = ((percent - 50) * 2);
+	/* Rescale */
+	altitude += (float) climb * 0.01f;
+	/* Clamp altitude */
+	altitude = clamp(altitude, altitude_min, altitude_max);
 }
 
 void control_roll(const int nominal_speed_percentage) {
-    /* Clamp input to [0, 100] */
-    const float percent = clamp(nominal_speed_percentage, 0, 100);
+	/* Clamp input to [0, 100] */
+	const float percent = clamp(nominal_speed_percentage, 0, 100);
 
-    /* Linearly map percentage to roll */
-    roll = (roll_min + ((roll_max - roll_min) * percent) / 100.0f);
+	/* Linearly map percentage to roll */
+	roll = (roll_min + ((roll_max - roll_min) * percent) / 100.0f);
 }
 
-//TODO: Parameters (refresh rate, digits, altitude...)
+// TODO: Parameters (refresh rate, digits, altitude...)
 void display_altitude() {
-    /* Get the digits of the altitude value */
-    unsigned int n_altitude_digits = 3;
-    int *altitude_digits = digits(altitude, n_altitude_digits);
-    int units = altitude_digits[0];
-    int tens = altitude_digits[1];
-    int hundreds = altitude_digits[2];
+	/* Get the digits of the altitude value */
+	unsigned int n_altitude_digits = 3;
+	int *altitude_digits = digits(altitude, n_altitude_digits);
+	int units = altitude_digits[0];
+	int tens = altitude_digits[1];
+	int hundreds = altitude_digits[2];
 
-    /* Get the bits of each digit (4 bits per digit) */
-    unsigned int bits_display = 4;
-    int *bits_units = decToBin(units, bits_display);
-    int *bits_tens = decToBin(tens, bits_display);
-    int *bits_hundreds = decToBin(hundreds, bits_display);
+	/* Get the bits of each digit (4 bits per digit) */
+	unsigned int bits_display = 4;
+	int *bits_units = decToBin(units, bits_display);
+	int *bits_tens = decToBin(tens, bits_display);
+	int *bits_hundreds = decToBin(hundreds, bits_display);
 
-    /* Send bits in order: units, tens, hundreds */
-    sendBits(bits_units, 4, 0, 1);
-    sendBits(bits_tens, 4, 0, 1);
-    sendBits(bits_hundreds, 4, 0, 1);
+	/* Send bits in order: units, tens, hundreds */
+	sendBits(bits_units, 4, 0, 1);
+	sendBits(bits_tens, 4, 0, 1);
+	sendBits(bits_hundreds, 4, 0, 1);
 
-    /* Pulse STB to send data to display */
-    PORTD |= (1 << 2);
-    PORTD &= ~(1 << 2);
+	/* Pulse STB to send data to display */
+	PORTD |= (1 << 2);
+	PORTD &= ~(1 << 2);
 
-    /* Delay */
-    // Control delay depending on motor speed (potentiometer value)
-    for (volatile long delay = 0; delay < 10000; delay++) {
-    }
+	/* Delay */
+	// Control delay depending on motor speed (potentiometer value)
+	for (volatile long delay = 0; delay < 10000; delay++) {
+	}
 
-    /* Free allocated memory */
-    free(altitude_digits);
-    free(bits_units);
-    free(bits_tens);
-    free(bits_hundreds);
+	/* Free allocated memory */
+	free(altitude_digits);
+	free(bits_units);
+	free(bits_tens);
+	free(bits_hundreds);
 }
 
 /**
@@ -110,15 +109,17 @@ void display_altitude() {
  * @return Array with the digits
  */
 int *digits(int number, const int n_digits) {
-    int *digits = (int *) malloc(n_digits * sizeof(int));
-    /* Safety check */
-    if (digits == NULL) return NULL;
+	int *digits = (int *) malloc(n_digits * sizeof(int));
+	/* Safety check */
+	if (digits == NULL) {
+		return NULL;
+	}
 
-    for (int i = 0; i < n_digits; i++) {
-        digits[i] = number % 10;
-        number /= 10;
-    }
-    return digits;
+	for (int i = 0; i < n_digits; i++) {
+		digits[i] = number % 10;
+		number /= 10;
+	}
+	return digits;
 }
 
 
@@ -131,20 +132,20 @@ int *digits(int number, const int n_digits) {
  * @param channel_clk Clock channel of the display
  */
 void sendBits(const int *bits, const int n_bits, const unsigned int channel_d, const unsigned int channel_clk) {
-    /* Clear ports before setting new bits */
-    PORTD &= ~((1 << channel_d) | (1 << channel_clk));
-    /* Send bits to port */
-    for (int i = n_bits - 1; i >= 0; i--) {
-        if (bits[i]) {
-            PORTD |= (1 << channel_d);
-        } else {
-            PORTD &= ~(1 << channel_d);
-        }
+	/* Clear ports before setting new bits */
+	PORTD &= ~((1 << channel_d) | (1 << channel_clk));
+	/* Send bits to port */
+	for (int i = n_bits - 1; i >= 0; i--) {
+		if (bits[i]) {
+			PORTD |= (1 << channel_d);
+		} else {
+			PORTD &= ~(1 << channel_d);
+		}
 
-        /* Clock pulse */
-        PORTD |= (1 << channel_clk);
-        PORTD &= ~(1 << channel_clk);
-    }
+		/* Clock pulse */
+		PORTD |= (1 << channel_clk);
+		PORTD &= ~(1 << channel_clk);
+	}
 }
 
 /**
@@ -155,48 +156,48 @@ void sendBits(const int *bits, const int n_bits, const unsigned int channel_d, c
  * @return An array with the bits
  */
 int *decToBin(const int decimal, const int n_bits) {
-    int *bits = (int *) malloc(n_bits * sizeof(int));
-    for (int i = n_bits - 1; i >= 0; i--) {
-        bits[n_bits - 1 - i] = (decimal >> i) & 1;
-    }
-    return bits;
+	int *bits = (int *) malloc(n_bits * sizeof(int));
+	for (int i = n_bits - 1; i >= 0; i--) {
+		bits[n_bits - 1 - i] = (decimal >> i) & 1;
+	}
+	return bits;
 }
 
 /**
  * Configures the board and initialises the setup variables
  */
 void setup() {
-    /* Configure I/O */
-    DDRB = 0b00000000; /* Set [PB0-PB7] as input */
-    DDRC = 0b00000000; /* Set [PC0-PD3] as output */
-    DDRD = 0b00000111; /* Set [PD0-PD2] as output */
-    /* Configure pull-up resistor */
-    PORTC &= ~(1 << 0); /* Disable pull-up resistor on PC0 */
-    PORTC &= ~(1 << 1); /* Disable pull-up resistor on PC1 */
-    /* Set initial values */
-    altitude_min = 0; /* Ground altitude of the quadcopter */
-    altitude_max = 999; /* Ceiling altitude of the quadcopter */
-    altitude = altitude_min; /* Altitude starts at ground level */
+	/* Configure I/O */
+	DDRB = 0b00000000; /* Set [PB0-PB7] as input */
+	DDRC = 0b00000000; /* Set [PC0-PD3] as output */
+	DDRD = 0b00000111; /* Set [PD0-PD2] as output */
+	/* Configure pull-up resistor */
+	PORTC &= ~(1 << 0); /* Disable pull-up resistor on PC0 */
+	PORTC &= ~(1 << 1); /* Disable pull-up resistor on PC1 */
+	/* Set initial values */
+	altitude_min = 0; /* Ground altitude of the quadcopter */
+	altitude_max = 999; /* Ceiling altitude of the quadcopter */
+	altitude = altitude_min; /* Altitude starts at ground level */
 
-    roll_min = -45;
-    roll_max = 45;
-    roll = roll_min;
+	roll_min = -45;
+	roll_max = 45;
+	roll = roll_min;
 }
 
 /**
  * Main execution loop
  */
 void loop() {
-    /* If the controller is ON (PB0 high level) */
-    if ((PINB & (1 << 0))) {
-        pot_altitude = scale_adc_to_percent(read_potentiometer(0));
-        pot_roll = scale_adc_to_percent(read_potentiometer(1));
+	/* If the controller is ON (PB0 high level) */
+	if ((PINB & (1 << 0))) {
+		pot_altitude = scale_adc_to_percent(read_potentiometer(0));
+		pot_roll = scale_adc_to_percent(read_potentiometer(1));
 
-        const float speed_altitude = 0.75f * pot_altitude;
-        const float speed_roll = 0.25f * pot_roll;
+		const float speed_altitude = 0.75f * pot_altitude;
+		const float speed_roll = 0.25f * pot_roll;
 
-        control_altitude(pot_altitude);
-        control_roll(pot_roll);
-        display_altitude();
-    }
+		control_altitude(pot_altitude);
+		control_roll(pot_roll);
+		display_altitude();
+	}
 }
