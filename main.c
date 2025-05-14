@@ -1,3 +1,4 @@
+#include <stdlib.h>
 int current_altitude;
 int altitude_lower_limit;
 int altitude_upper_limit;
@@ -19,7 +20,7 @@ void setup() {
 	/* Configure I/O */
 	DDRB = 0b00000000; /* Set [PB0-PB7] as input */
 	DDRC = 0b00000000; /* Set [PC0-PD3] as output */
-	DDRD = 0b00000111; /* Set [PD0-PD2] as output */
+	DDRD = 0b00111111; /* Set [PD0-PD5] as output */
 	/* Configure pull-up resistor */
 	PORTC &= ~(1 << 0); /* Disable pull-up resistor on PC0 */
 	PORTC &= ~(1 << 1); /* Disable pull-up resistor on PC1 */
@@ -48,12 +49,11 @@ void loop() {
 		const float pot_altitude = scale_adc_to_percent(read_potentiometer(0));
 		const float pot_roll = scale_adc_to_percent(read_potentiometer(1));
 
-		const float speed_altitude = 0.75f * pot_altitude;
-		const float speed_roll = 0.25f * pot_roll;
-
 		control_altitude((int) pot_altitude);
 		control_roll((int) pot_roll);
+		control_motors(pot_altitude, pot_roll);
 		display_altitude();
+		display_roll();
 	}
 }
 
@@ -82,8 +82,7 @@ void control_altitude(const int pot_altitude_percentage) {
 
 	current_altitude += climb;
 	/* Clamp altitude */
-	current_altitude =
-			(int) clamp((float) current_altitude, (float) altitude_lower_limit, (float) altitude_upper_limit);
+	current_altitude = (int) clamp((float) current_altitude, (float) altitude_lower_limit, (float) altitude_upper_limit);
 }
 
 /**
@@ -97,8 +96,17 @@ void control_roll(const int pot_roll_percentage) {
 	const float percent = clamp((float) pot_roll_percentage, 0, 100);
 
 	/* Linearly map percentage to roll */
-	current_roll_angle =
-			(int) ((float) roll_angle_min + ((float) (roll_angle_max - roll_angle_min) * percent) / 100.0f);
+	current_roll_angle = (int) ((float) roll_angle_min + ((float) (roll_angle_max - roll_angle_min) * percent) / 100.0f);
+}
+
+void control_motors(float speed_altitude, float speed_roll) {
+	/* Security clamp */
+	speed_altitude = clamp(speed_altitude, 0.0f, 100.0f);
+	speed_roll = clamp(speed_roll, -45.0f, 45.0f);
+
+	/* Left motors slow down and right motors speed up on positive roll values */
+	const float speed_left = speed_altitude - speed_roll;
+	const float speed_right = speed_altitude + speed_roll;
 }
 
 /* ******************************************************** */
@@ -164,7 +172,6 @@ void display_altitude() {
 	PORTD &= ~(1 << 2);
 
 	/* Delay */
-	// Control delay depending on motor speed (potentiometer value)
 	for (volatile long delay = 0; delay < 10000; delay++) {
 	}
 
@@ -173,6 +180,10 @@ void display_altitude() {
 	free(bits_units);
 	free(bits_tens);
 	free(bits_hundreds);
+}
+
+void display_roll() {
+	//TODO: Display roll
 }
 
 /* *************************************************** */
@@ -235,8 +246,7 @@ int *decimal_to_binary(const int decimal, const int n_bits) {
  * @param channel_d Data pin index on PORTD.
  * @param channel_clk Clock pin index on PORTD.
  */
-void send_bits_to_display(const int *bits, const int n_bits, const unsigned int channel_d,
-                          const unsigned int channel_clk) {
+void send_bits_to_display(const int *bits, const int n_bits, const unsigned int channel_d, const unsigned int channel_clk) {
 	/* Clear ports before setting new bits */
 	PORTD &= ~((1 << channel_d) | (1 << channel_clk));
 	/* Send bits to port */
