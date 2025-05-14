@@ -1,10 +1,10 @@
-float altitude;
+int altitude;
 int altitude_min;
 int altitude_max;
 
-float roll;
-float roll_min;
-float roll_max;
+int roll;
+int roll_min;
+int roll_max;
 
 float pot_altitude;
 float pot_roll;
@@ -45,21 +45,37 @@ float clamp(const float x, const float min_val, const float max_val) {
 	return (x < min_val) ? min_val : (x > max_val) ? max_val : x;
 }
 
-// TODO: FIX THIS TWO
-void control_altitude(const int nominal_speed_percentage) {
+static int fractional_part = 0;
+const int SCALE = 100;
+
+/**
+ * Determines the climb rate depending on the altitude potentiometer and calculates the new altitude
+ *
+ * @param pot_altitude_percentage The level of the altitude potentiometer
+ */
+void control_altitude(const int pot_altitude_percentage) {
 	/* Clamp input to [0, 100] */
-	const int percent = (int) clamp(nominal_speed_percentage, 0, 100);
-	/* Scale by 100 -> Avoid using floating point */
-	const int16_t climb = ((percent - 50) * 2);
-	/* Rescale */
-	altitude += (float) climb * 0.01f;
+	const int percent = (int) clamp(pot_altitude_percentage, 0, 100);
+	/* Calculate climb with scaling */
+	fractional_part += (percent - 50);  // Range -50 to +50
+
+	/* When accumulated enough for at least 1 unit */
+	const int climb = fractional_part / SCALE;
+	fractional_part %= SCALE;
+
+	altitude += climb;
 	/* Clamp altitude */
-	altitude = clamp(altitude, altitude_min, altitude_max);
+	altitude = (int)clamp(altitude, altitude_min, altitude_max);
 }
 
-void control_roll(const int nominal_speed_percentage) {
+/**
+ * Calculates the new roll angle
+ *
+ * @param pot_roll_percentage The level of the roll potentiometer
+ */
+void control_roll(const int pot_roll_percentage) {
 	/* Clamp input to [0, 100] */
-	const float percent = clamp(nominal_speed_percentage, 0, 100);
+	const float percent = clamp(pot_roll_percentage, 0, 100);
 
 	/* Linearly map percentage to roll */
 	roll = (roll_min + ((roll_max - roll_min) * percent) / 100.0f);
