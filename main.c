@@ -7,10 +7,10 @@ int roll_min;
 int roll_max;
 
 /**
- * Read the analog value from a potentiometer connected to the specified channel
+ * Reads the analog value from a potentiometer connected to the specified ADC channel.
  *
- * @param channel Channel to read from
- * @return The analog value of the potentiometer
+ * @param channel ADC channel number to read from.
+ * @return The raw 10-bit analog value.
  */
 float read_potentiometer(const int channel) {
 	ADMUX = (1 << REFS0) | (channel & 0x0F); /* AVCC as reference, select ADC channel */
@@ -23,20 +23,20 @@ float read_potentiometer(const int channel) {
 }
 
 /**
- * Scale an ADC value to a percentage
+ * Converts a raw ADC value into a percentage.
  *
- * @param value Analog value
- * @return Analog value scaled to percentage
+ * @param value Raw ADC value.
+ * @return Percentage value scaled between 0.0 and 100.0.
  */
 float scale_adc_to_percent(const float value) { return ((float) value / 1023.0f) * 100.0f; }
 
 /**
- * Constrain the resolution of a value within a range
+ * Constrains a float value within the given range.
  *
- * @param x Value
- * @param min_val Lower limit
- * @param max_val Upper limit
- * @return A value inside the limits
+ * @param x The input value.
+ * @param min_val Minimum allowable value.
+ * @param max_val Maximum allowable value.
+ * @return Clamped value within [min_val, max_val].
  */
 float clamp(const float x, const float min_val, const float max_val) {
 	return (x < min_val) ? min_val : (x > max_val) ? max_val : x;
@@ -46,9 +46,10 @@ static int fractional_part = 0;
 const int SCALE = 100;
 
 /**
- * Determines the climb rate depending on the altitude potentiometer and calculates the new altitude
+ * Adjusts the altitude based on the potentiometer input.
+ * Simulates a climb rate by accumulating deviation from 50% input.
  *
- * @param pot_altitude_percentage The level of the altitude potentiometer
+ * @param pot_altitude_percentage Value from altitude potentiometer (0–100%).
  */
 void control_altitude(const int pot_altitude_percentage) {
 	/* Clamp input to [0, 100] */
@@ -66,9 +67,10 @@ void control_altitude(const int pot_altitude_percentage) {
 }
 
 /**
- * Calculates the new roll angle
+ * Updates the roll angle based on the roll potentiometer input.
+ * Maps the percentage input linearly to the roll range [roll_min, roll_max].
  *
- * @param pot_roll_percentage The level of the roll potentiometer
+ * @param pot_roll_percentage Value from roll potentiometer (0–100%).
  */
 void control_roll(const int pot_roll_percentage) {
 	/* Clamp input to [0, 100] */
@@ -78,7 +80,13 @@ void control_roll(const int pot_roll_percentage) {
 	roll = (int) ((float) roll_min + ((float) (roll_max - roll_min) * percent) / 100.0f);
 }
 
-// TODO: Parameters (refresh rate, digits, altitude...)
+/**
+ * Displays the current altitude on a 3-digit digital display.
+ * Converts the altitude into digits, then into bits, and sends them to the display.
+ * Assumes external memory management and display hardware setup.
+ *
+ * Memory: Allocates and frees temporary arrays for digit/bit storage.
+ */
 void display_altitude() {
 	/* Get the digits of the altitude value */
 	unsigned int n_altitude_digits = 3;
@@ -115,11 +123,11 @@ void display_altitude() {
 }
 
 /**
- * Split a number in digits and return as an array
+ * Splits an integer number into an array of its decimal digits (the least significant first).
  *
- * @param number Integer number
- * @param n_digits Number of digits to extract
- * @return Array with the digits
+ * @param number The input integer number.
+ * @param n_digits Number of digits to extract.
+ * @return Dynamically allocated array of digits, or NULL if allocation fails.
  */
 int *digits(int number, const int n_digits) {
 	int *digits = (int *) malloc(n_digits * sizeof(int));
@@ -137,12 +145,12 @@ int *digits(int number, const int n_digits) {
 
 
 /**
- * Send an array of bits and clock pulse over PIND
+ * Sends a sequence of bits to a digital display using PORTD and specific channels.
  *
- * @param bits Data to be sent
- * @param n_bits Number of bits sent
- * @param channel_d Data channel of the display
- * @param channel_clk Clock channel of the display
+ * @param bits Array of bits to send.
+ * @param n_bits Number of bits to send.
+ * @param channel_d Data pin index on PORTD.
+ * @param channel_clk Clock pin index on PORTD.
  */
 void sendBits(const int *bits, const int n_bits, const unsigned int channel_d, const unsigned int channel_clk) {
 	/* Clear ports before setting new bits */
@@ -162,11 +170,11 @@ void sendBits(const int *bits, const int n_bits, const unsigned int channel_d, c
 }
 
 /**
- * Extract the bits of a decimal number to an array
+ * Converts a decimal number to its binary representation as an array of bits.
  *
- * @param decimal A decimal number
- * @param n_bits Number of bits to extract
- * @return An array with the bits
+ * @param decimal Input decimal number.
+ * @param n_bits Number of bits in the result.
+ * @return Dynamically allocated bit array (the most significant bit first).
  */
 int *decToBin(const int decimal, const int n_bits) {
 	int *bits = (int *) malloc(n_bits * sizeof(int));
@@ -177,7 +185,9 @@ int *decToBin(const int decimal, const int n_bits) {
 }
 
 /**
- * Configures the board and initialises the setup variables
+ * Initializes I/O pins, pull-up resistors, and global state variables.
+ *
+ * Called once at system startup.
  */
 void setup() {
 	/* Configure I/O */
@@ -198,7 +208,13 @@ void setup() {
 }
 
 /**
- * Main execution loop
+ * Main loop function that:
+ * - Reads potentiometer inputs
+ * - Updates altitude and roll based on scaled inputs
+ * - Updates the speed of the motors based on scaled inputs
+ * - Displays current altitude and roll
+ *
+ * Executes only when controller switch (PB0) is ON.
  */
 void loop() {
 	/* If the controller is ON (PB0 high level) */
