@@ -143,21 +143,21 @@ float scale_adc_to_percent(const float value) { return ((float) value / 1023.0f)
 void display_altitude() {
 	/* Get the digits of the altitude value */
 	unsigned int n_altitude_digits = 3;
-	int *altitude_digits = digits(current_altitude, n_altitude_digits);
+	int *altitude_digits = extract_digits(current_altitude, n_altitude_digits);
 	int units = altitude_digits[0];
 	int tens = altitude_digits[1];
 	int hundreds = altitude_digits[2];
 
 	/* Get the bits of each digit (4 bits per digit) */
 	unsigned int bits_display = 4;
-	int *bits_units = decToBin(units, bits_display);
-	int *bits_tens = decToBin(tens, bits_display);
-	int *bits_hundreds = decToBin(hundreds, bits_display);
+	int *bits_units = decimal_to_binary(units, bits_display);
+	int *bits_tens = decimal_to_binary(tens, bits_display);
+	int *bits_hundreds = decimal_to_binary(hundreds, bits_display);
 
 	/* Send bits in order: units, tens, hundreds */
-	sendBits(bits_units, 4, 0, 1);
-	sendBits(bits_tens, 4, 0, 1);
-	sendBits(bits_hundreds, 4, 0, 1);
+	send_bits_to_display(bits_units, 4, 0, 1);
+	send_bits_to_display(bits_tens, 4, 0, 1);
+	send_bits_to_display(bits_hundreds, 4, 0, 1);
 
 	/* Pulse STB to send data to display */
 	PORTD |= (1 << 2);
