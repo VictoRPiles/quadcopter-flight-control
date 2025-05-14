@@ -6,9 +6,6 @@ int roll;
 int roll_min;
 int roll_max;
 
-float pot_altitude;
-float pot_roll;
-
 /**
  * Read the analog value from a potentiometer connected to the specified channel
  *
@@ -21,7 +18,7 @@ float read_potentiometer(const int channel) {
 	while (ADCSRA & (1 << ADSC)) /* Wait for conversion to finish */
 		;
 
-	int value = ADCL + (ADCH << 8); /* Combine 10-bit result */
+	const float value = ADCL + (ADCH << 8); /* Combine 10-bit result */
 	return value;
 }
 
@@ -55,9 +52,9 @@ const int SCALE = 100;
  */
 void control_altitude(const int pot_altitude_percentage) {
 	/* Clamp input to [0, 100] */
-	const int percent = (int) clamp(pot_altitude_percentage, 0, 100);
+	const int percent = (int) clamp((float) pot_altitude_percentage, 0, 100);
 	/* Calculate climb with scaling */
-	fractional_part += (percent - 50);  // Range -50 to +50
+	fractional_part += percent - 50; // Range -50 to +50
 
 	/* When accumulated enough for at least 1 unit */
 	const int climb = fractional_part / SCALE;
@@ -65,7 +62,7 @@ void control_altitude(const int pot_altitude_percentage) {
 
 	altitude += climb;
 	/* Clamp altitude */
-	altitude = (int)clamp(altitude, altitude_min, altitude_max);
+	altitude = (int) clamp((float) altitude, (float) altitude_min, (float) altitude_max);
 }
 
 /**
@@ -75,10 +72,10 @@ void control_altitude(const int pot_altitude_percentage) {
  */
 void control_roll(const int pot_roll_percentage) {
 	/* Clamp input to [0, 100] */
-	const float percent = clamp(pot_roll_percentage, 0, 100);
+	const float percent = clamp((float) pot_roll_percentage, 0, 100);
 
 	/* Linearly map percentage to roll */
-	roll = (roll_min + ((roll_max - roll_min) * percent) / 100.0f);
+	roll = (int) ((float) roll_min + ((float) (roll_max - roll_min) * percent) / 100.0f);
 }
 
 // TODO: Parameters (refresh rate, digits, altitude...)
@@ -206,14 +203,14 @@ void setup() {
 void loop() {
 	/* If the controller is ON (PB0 high level) */
 	if ((PINB & (1 << 0))) {
-		pot_altitude = scale_adc_to_percent(read_potentiometer(0));
-		pot_roll = scale_adc_to_percent(read_potentiometer(1));
+		const float pot_altitude = scale_adc_to_percent(read_potentiometer(0));
+		const float pot_roll = scale_adc_to_percent(read_potentiometer(1));
 
 		const float speed_altitude = 0.75f * pot_altitude;
 		const float speed_roll = 0.25f * pot_roll;
 
-		control_altitude(pot_altitude);
-		control_roll(pot_roll);
+		control_altitude((int) pot_altitude);
+		control_roll((int) pot_roll);
 		display_altitude();
 	}
 }
