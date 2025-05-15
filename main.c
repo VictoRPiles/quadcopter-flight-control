@@ -1,4 +1,3 @@
-#include <stdlib.h>
 int current_altitude;
 int altitude_lower_limit;
 int altitude_upper_limit;
@@ -6,6 +5,8 @@ int altitude_upper_limit;
 int current_roll_angle;
 int roll_angle_min;
 int roll_angle_max;
+
+const int reload_value = get_reload_value(20000, 16, 8); /* For 20ms, 16us and pre-scaler 8 */
 
 /* **************************************************** */
 /* ******************* ENTRY POINT ******************** */
@@ -18,8 +19,8 @@ int roll_angle_max;
  */
 void setup() {
 	/* Configure I/O */
-	DDRB = 0b00000000; /* Set [PB0-PB7] as input */
-	DDRC = 0b00000000; /* Set [PC0-PD3] as output */
+	DDRB = 0b00000110; /* Set [PB0, PB3-PB7] as input and [PB1, PB2] as output*/
+	DDRC = 0b00000000; /* Set [PC0-PC7] as input */
 	DDRD = 0b00111111; /* Set [PD0-PD5] as output */
 	/* Configure pull-up resistor */
 	PORTC &= ~(1 << 0); /* Disable pull-up resistor on PC0 */
@@ -28,10 +29,15 @@ void setup() {
 	altitude_lower_limit = 0; /* Ground altitude of the quadcopter */
 	altitude_upper_limit = 999; /* Ceiling altitude of the quadcopter */
 	current_altitude = altitude_lower_limit; /* Altitude starts at ground level */
-
 	roll_angle_min = -45;
 	roll_angle_max = 45;
 	current_roll_angle = roll_angle_min;
+	/* Configure timer 1 */
+	TCCR1A = 0b00000000; /* Normal operation of the I/O lines */
+	TCCR1B = 0b00000010; /* Pre-scalar of 8 */
+	TCNT1H = reload_value / 256; /* Time interval for 20ms */
+	TCNT1L = reload_value % 256; /* Initial value of the timer */
+	TIMSK1 = (1 << TOIE1); /* Timer 1 overflow interrupt enabled */
 }
 
 /**
@@ -54,6 +60,33 @@ void loop() {
 		control_motors(pot_altitude, pot_roll);
 		display_altitude();
 		display_roll();
+	}
+}
+
+/**
+ * Compute the reload value for a specified configuration.
+ *
+ * @param time_interval Time interval in milliseconds.
+ * @param frequency_io Frequency of the microcontroller in milliseconds.
+ * @param pre_scaler Pre-scaler value.
+ * @return The appropriate reload value.
+ */
+int get_reload_value(const int time_interval, const int frequency_io, const int pre_scaler) {
+	return 65536 - (time_interval * frequency_io) / pre_scaler;
+}
+
+/**
+ * Interrupt 1, controls the right motors
+ */
+ISR(TIMER1_OVF_vect) {
+	TCNT1H = reload_value / 256; /* Time interval for 20ms */
+	TCNT1L = reload_value % 256; /* Initial value of the timer */
+	if (PORTB & (1 << 2)) {
+		// PB2 = 1
+		PORTB &= ~(1 << 2); //PB2 = 0
+	}
+	else {
+		PORTB |= (1 << 2); //PB2 = 1
 	}
 }
 
