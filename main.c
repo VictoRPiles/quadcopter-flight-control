@@ -7,6 +7,8 @@ int roll_angle_min;
 int roll_angle_max;
 
 const int reload_value = get_reload_value(20000, 16, 8); /* For 20ms, 16us and pre-scaler 8 */
+long motor_angle_left = 0;
+long motor_angle_right = 0;
 
 /* **************************************************** */
 /* ******************* ENTRY POINT ******************** */
@@ -37,7 +39,7 @@ void setup() {
 	TCCR1B = 0b00000010; /* Pre-scalar of 8 */
 	TCNT1H = reload_value / 256; /* Time interval for 20ms */
 	TCNT1L = reload_value % 256; /* Initial value of the timer */
-	TIMSK1 = (1 << TOIE1); /* Timer 1 overflow interrupt enabled */
+	TIMSK1 = (1 << TOIE1) | (1 << OCIE1A) | (1 << OCIE1B); /* Timer 1 overflow and compare interrupt enabled */
 }
 
 /**
@@ -75,19 +77,31 @@ int get_reload_value(const int time_interval, const int frequency_io, const int 
 	return 65536 - (time_interval * frequency_io) / pre_scaler;
 }
 
-/**
- * Interrupt 1, controls the right motors
- */
 ISR(TIMER1_OVF_vect) {
-	TCNT1H = reload_value / 256; /* Time interval for 20ms */
-	TCNT1L = reload_value % 256; /* Initial value of the timer */
-	if (PORTB & (1 << 2)) {
-		// PB2 = 1
-		PORTB &= ~(1 << 2); //PB2 = 0
-	}
-	else {
-		PORTB |= (1 << 2); //PB2 = 1
-	}
+	TCNT1 = reload_value; // Restart 20ms timer
+	PORTB |= (1 << 2); // Set PB2 HIGH (start of pulse)
+
+	// FIXME: Motor angle is 11.2º greater
+	motor_angle_left = motor_angle_left - 11;
+	motor_angle_right = motor_angle_right - 11;
+	// Set Compare Match A to clear pin after `pulse_width_us`
+	// pulse_width_us * 2 = number of ticks (because each tick = 0.5us)
+	const long pulse_width_left = angle_to_pulse(motor_angle_left, 0, 180, 1000, 2000);
+	OCR1A = TCNT1 + (pulse_width_left * 2);
+
+	PORTB |= (1 << 1); // Set PB1 HIGH (start of pulse)
+
+	// Setup Compare Match B for RIGHT MOTOR
+	const long pulse_width_right = angle_to_pulse(motor_angle_right, 0, 180, 1000, 2000);
+	OCR1B = TCNT1 + (pulse_width_right * 2);
+}
+
+ISR(TIMER1_COMPA_vect) {
+	PORTB &= ~(1 << 2); // Set PB2 LOW (end of pulse)
+}
+
+ISR(TIMER1_COMPB_vect) {
+	PORTB &= ~(1 << 1); // Set PB1 LOW (end of pulse)
 }
 
 /* ***************************************************** */
@@ -132,14 +146,21 @@ void control_roll(const int pot_roll_percentage) {
 	current_roll_angle = (int) ((float) roll_angle_min + ((float) (roll_angle_max - roll_angle_min) * percent) / 100.0f);
 }
 
-void control_motors(float speed_altitude, float speed_roll) {
-	/* Security clamp */
-	speed_altitude = clamp(speed_altitude, 0.0f, 100.0f);
-	speed_roll = clamp(speed_roll, -45.0f, 45.0f);
+void control_motors(const float speed_altitude, const float speed_roll) {
+	/* Roll deviation from center */
+	const float roll_effect = (speed_roll - 50.0f) * 2;
 
-	/* Left motors slow down and right motors speed up on positive roll values */
-	const float speed_left = speed_altitude - speed_roll;
-	const float speed_right = speed_altitude + speed_roll;
+	/* Weighted motor speed: 75% altitude, 25% roll */
+	const float total_speed_left = 0.75f * speed_altitude - 0.25f * roll_effect;
+	const float total_speed_right = 0.75f * speed_altitude + 0.25f * roll_effect;
+
+	/* Map to angles [0, 180] */
+	const float angle_left = (total_speed_left / 100.0f) * 180.0f;
+	const float angle_right = (total_speed_right / 100.0f) * 180.0f;
+
+	/* Set angle to motors */
+	motor_angle_left = (long) angle_left;
+	motor_angle_right = (long) angle_right;
 }
 
 /* ******************************************************** */
@@ -222,6 +243,10 @@ void display_roll() {
 /* *************************************************** */
 /* ******************** UTILITIES ******************** */
 /* *************************************************** */
+
+long angle_to_pulse(const long x, const long in_min, const long in_max, const long out_min, const long out_max) {
+	return (x - in_min) * (out_max - out_min) / (in_max - in_min) + out_min;
+}
 
 /**
  * Constrains a float value within the given range.
