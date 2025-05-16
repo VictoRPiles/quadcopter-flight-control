@@ -1,14 +1,16 @@
-int current_altitude;
-int altitude_lower_limit;
-int altitude_upper_limit;
+int current_altitude; /* Current altitude of the quadcopter */
+int altitude_lower_limit; /* Minimum allowed altitude (ground level) */
+int altitude_upper_limit; /* Maximum allowed altitude (ceiling) */
 
-int current_roll_angle;
-int roll_angle_min;
-int roll_angle_max;
+int current_roll_angle; /* Current roll angle of the quadcopter */
+int roll_angle_min; /* Minimum roll angle (e.g., full left tilt) */
+int roll_angle_max; /* Maximum roll angle (e.g., full right tilt) */
 
-const int reload_value = get_reload_value(20000, 16, 8); /* For 20ms, 16us and pre-scaler 8 */
-long motor_angle_left = 0;
-long motor_angle_right = 0;
+/* Timer1 reload value for 20ms period, given 16µs tick with pre-scaler 8 */
+const int reload_value = get_reload_value(20000, 16, 8);
+
+long motor_angle_left = 0; /* Angle to command the left motor */
+long motor_angle_right = 0; /* Angle to command the right motor */
 
 /* **************************************************** */
 /* ******************* ENTRY POINT ******************** */
@@ -77,31 +79,44 @@ int get_reload_value(const int time_interval, const int frequency_io, const int 
 	return 65536 - (time_interval * frequency_io) / pre_scaler;
 }
 
+/**
+ * ISR for Timer1 Overflow
+ *
+ * This interrupt is triggered every 20 milliseconds to generate servo control pulses. It sets the output pins high
+ * at the start of the pulse, then sets up compare match registers (OCR1A and OCR1B) to bring the pins low after a
+ * calculated pulse width, thereby simulating PWM to control servo angles.
+ */
 ISR(TIMER1_OVF_vect) {
-	TCNT1 = reload_value; // Restart 20ms timer
-	PORTB |= (1 << 2); // Set PB2 HIGH (start of pulse)
-
-	// FIXME: Motor angle is 11.2º greater
-	motor_angle_left = motor_angle_left - 11;
-	motor_angle_right = motor_angle_right - 11;
-	// Set Compare Match A to clear pin after `pulse_width_us`
-	// pulse_width_us * 2 = number of ticks (because each tick = 0.5us)
-	const long pulse_width_left = angle_to_pulse(motor_angle_left, 0, 180, 1000, 2000);
-	OCR1A = TCNT1 + (pulse_width_left * 2);
-
+	/* Restart 20ms timer */
+	TCNT1 = reload_value;
+	/* Right motors */
 	PORTB |= (1 << 1); // Set PB1 HIGH (start of pulse)
-
-	// Setup Compare Match B for RIGHT MOTOR
 	const long pulse_width_right = angle_to_pulse(motor_angle_right, 0, 180, 1000, 2000);
-	OCR1B = TCNT1 + (pulse_width_right * 2);
+	OCR1A = TCNT1 + (pulse_width_right * 2);
+	/* Left motors */
+	PORTB |= (1 << 2); // Set PB2 HIGH (start of pulse)
+	const long pulse_width_left = angle_to_pulse(motor_angle_left, 0, 180, 1000, 2000);
+	OCR1B = TCNT1 + (pulse_width_left * 2);
 }
 
+/**
+ * ISR for Timer1 Compare Match A
+ *
+ * Triggered when TCNT1 matches OCR1A. This marks the end of the PWM pulse
+ * for the right motor (PB1), which is set LOW to complete the signal.
+ */
 ISR(TIMER1_COMPA_vect) {
-	PORTB &= ~(1 << 2); // Set PB2 LOW (end of pulse)
+	PORTB &= ~(1 << 1); // Set PB2 LOW (end of pulse)
 }
 
+/**
+ * ISR for Timer1 Compare Match B
+ *
+ * Triggered when TCNT1 matches OCR1B. This marks the end of the PWM pulse
+ * for the left motor (PB2), which is set LOW to complete the signal.
+ */
 ISR(TIMER1_COMPB_vect) {
-	PORTB &= ~(1 << 1); // Set PB1 LOW (end of pulse)
+	PORTB &= ~(1 << 2); // Set PB1 LOW (end of pulse)
 }
 
 /* ***************************************************** */
@@ -146,6 +161,17 @@ void control_roll(const int pot_roll_percentage) {
 	current_roll_angle = (int) ((float) roll_angle_min + ((float) (roll_angle_max - roll_angle_min) * percent) / 100.0f);
 }
 
+/**
+ * Calculates motor angles based on altitude and roll input percentages.
+ *
+ * This function combines the altitude (throttle) and roll (tilt) input
+ * to determine the final angle for each motor. A differential is applied
+ * for roll: if rolling right, the left motor gets more power and the right
+ * loses power and vice versa.
+ *
+ * @param speed_altitude Percentage of throttle (0–100), where 50% is hovering
+ * @param speed_roll Percentage of roll (0–100), where 50% is neutral
+ */
 void control_motors(const float speed_altitude, const float speed_roll) {
 	/* Roll deviation from center */
 	const float roll_effect = (speed_roll - 50.0f) * 2;
@@ -236,6 +262,9 @@ void display_altitude() {
 	free(bits_hundreds);
 }
 
+/**
+ * Displays the current roll angle on a matrix display.
+ */
 void display_roll() {
 	//TODO: Display roll
 }
@@ -244,7 +273,21 @@ void display_roll() {
 /* ******************** UTILITIES ******************** */
 /* *************************************************** */
 
-long angle_to_pulse(const long x, const long in_min, const long in_max, const long out_min, const long out_max) {
+/**
+ * Converts a servo angle to a pulse width in microseconds.
+ *
+ * Standard servos expect 1000µs (0°) to 2000µs (180°) pulse widths.
+ *
+ * @param x Input angle in degrees.
+ * @param in_min Minimum angle (usually 0).
+ * @param in_max Maximum angle (usually 180).
+ * @param out_min Minimum pulse width (usually 1000).
+ * @param out_max Maximum pulse width (usually 2000).
+ * @return Corresponding pulse width in microseconds.
+ */
+long angle_to_pulse(long x, const long in_min, const long in_max, const long out_min, const long out_max) {
+	// FIXME: Motor angle is 11.2º greater
+	x = x - 11;
 	return (x - in_min) * (out_max - out_min) / (in_max - in_min) + out_min;
 }
 
