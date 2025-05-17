@@ -1,16 +1,32 @@
-int current_altitude; /* Current altitude of the quadcopter */
-int altitude_lower_limit; /* Minimum allowed altitude (ground level) */
-int altitude_upper_limit; /* Maximum allowed altitude (ceiling) */
+# define ALTITUDE_SCALE 1000
+# define ALTITUDE_LOWER_LIMIT 0 /* Minimum allowed altitude (ground level) */
+# define ALTITUDE_UPPER_LIMIT 999 /* Maximum allowed altitude (ceiling) */
+int current_altitude = 500; /* Current altitude of the quadcopter */
 
-int current_roll_angle; /* Current roll angle of the quadcopter */
-int roll_angle_min; /* Minimum roll angle (e.g., full left tilt) */
-int roll_angle_max; /* Maximum roll angle (e.g., full right tilt) */
+# define ROLL_ANGLE_MIN (-45) /* Minimum roll angle (e.g., full left tilt) */
+# define ROLL_ANGLE_MAX 45 /* Maximum roll angle (e.g., full right tilt) */
+int current_roll_angle = 0; /* Current roll angle of the quadcopter */
 
+#define ANGLE_RANGE 180
+#define MOTOR_ANGLE_OFFSET 9
 long motor_angle_left = 0; /* Angle to command the left motor */
 long motor_angle_right = 0; /* Angle to command the right motor */
 
+#define PULSE_MIN 1000 /* Pulse for 0º */
+#define PULSE_MAX 2000 /* Pulse for 180º */
+#define TIMER1_PERIOD 20000 /* Time interval in milliseconds */
+#define FREQUENCY_IO 16 /* Frequency of the microcontroller in milliseconds */
+#define TIMER1_PRESCALER 8 /* Prescaler value */
 /* Timer1 reload value for 20ms period, given 16µs tick with pre-scaler 8 */
-const int reload_value = get_reload_value(20000, 16, 8);
+const long reload_value = get_reload_value();
+
+#define ALT_D 0
+#define ALT_CLK 1
+#define ALT_STB 2
+
+#define ROLL_D 3
+#define ROLL_CLK 4
+#define ROLL_STB 5
 
 /* **************************************************** */
 /* ******************* ENTRY POINT ******************** */
@@ -26,16 +42,9 @@ void setup() {
 	DDRB = 0b00000110; /* Set [PB0, PB3-PB7] as input and [PB1, PB2] as output*/
 	DDRC = 0b00000000; /* Set [PC0-PC7] as input */
 	DDRD = 0b00111111; /* Set [PD0-PD5] as output */
-	/* Configure pull-up resistor */
-	PORTC &= ~(1 << 0); /* Disable pull-up resistor on PC0 */
-	PORTC &= ~(1 << 1); /* Disable pull-up resistor on PC1 */
-	/* Set initial values */
-	altitude_lower_limit = 0; /* Ground altitude of the quadcopter */
-	altitude_upper_limit = 999; /* Ceiling altitude of the quadcopter */
-	current_altitude = altitude_lower_limit; /* Altitude starts at ground level */
-	roll_angle_min = -45;
-	roll_angle_max = 45;
-	current_roll_angle = roll_angle_min;
+	/* Disable pull-up resistor on [PC0-PC1] */
+	PORTC &= ~(1 << 0);
+	PORTC &= ~(1 << 1);
 	/* Configure timer 1 */
 	TCCR1A = 0b00000000; /* Normal operation of the I/O lines */
 	TCCR1B = 0b00000010; /* Pre-scalar of 8 */
@@ -75,15 +84,15 @@ void loop() {
  * calculated pulse width, thereby simulating PWM to control servo angles.
  */
 ISR(TIMER1_OVF_vect) {
-	/* Restart 20ms timer */
+	/* Restart the timer */
 	TCNT1 = reload_value;
 	/* Right motors */
 	PORTB |= (1 << 1); // Set PB1 HIGH (start of pulse)
-	const long pulse_width_right = angle_to_pulse(motor_angle_right, 0, 180, 1000, 2000);
+	const long pulse_width_right = angle_to_pulse(motor_angle_right);
 	OCR1A = TCNT1 + (pulse_width_right * 2);
 	/* Left motors */
 	PORTB |= (1 << 2); // Set PB2 HIGH (start of pulse)
-	const long pulse_width_left = angle_to_pulse(motor_angle_left, 0, 180, 1000, 2000);
+	const long pulse_width_left = angle_to_pulse(motor_angle_left);
 	OCR1B = TCNT1 + (pulse_width_left * 2);
 }
 
@@ -94,7 +103,7 @@ ISR(TIMER1_OVF_vect) {
  * for the right motor (PB1), which is set LOW to complete the signal.
  */
 ISR(TIMER1_COMPA_vect) {
-	PORTB &= ~(1 << 1); // Set PB2 LOW (end of pulse)
+	PORTB &= ~(1 << 1); // Set PB1 LOW (end of pulse)
 }
 
 /**
@@ -104,7 +113,7 @@ ISR(TIMER1_COMPA_vect) {
  * for the left motor (PB2), which is set LOW to complete the signal.
  */
 ISR(TIMER1_COMPB_vect) {
-	PORTB &= ~(1 << 2); // Set PB1 LOW (end of pulse)
+	PORTB &= ~(1 << 2); // Set PB2 LOW (end of pulse)
 }
 
 /* ***************************************************** */
@@ -112,7 +121,6 @@ ISR(TIMER1_COMPB_vect) {
 /* ***************************************************** */
 
 static int altitude_accumulator = 0;
-const int SCALE = 100;
 
 /**
  * Adjusts the altitude based on the potentiometer input.
@@ -125,14 +133,13 @@ void control_altitude(const int pot_altitude_percentage) {
 	const int percent = (int) clamp((float) pot_altitude_percentage, 0, 100);
 	/* Calculate climb with scaling */
 	altitude_accumulator += percent - 50; // Range -50 to +50
-
 	/* When accumulated enough for at least 1 unit */
-	const int climb = altitude_accumulator / SCALE;
-	altitude_accumulator %= SCALE;
-
+	const int climb = altitude_accumulator / ALTITUDE_SCALE;
+	altitude_accumulator %= ALTITUDE_SCALE;
+	/* Apply the altitude change */
 	current_altitude += climb;
 	/* Clamp altitude */
-	current_altitude = (int) clamp((float) current_altitude, (float) altitude_lower_limit, (float) altitude_upper_limit);
+	current_altitude = (int) clamp((float) current_altitude, (float) ALTITUDE_LOWER_LIMIT, (float) ALTITUDE_UPPER_LIMIT);
 }
 
 /**
@@ -144,9 +151,8 @@ void control_altitude(const int pot_altitude_percentage) {
 void control_roll(const int pot_roll_percentage) {
 	/* Clamp input to [0, 100] */
 	const float percent = clamp((float) pot_roll_percentage, 0, 100);
-
 	/* Linearly map percentage to roll */
-	current_roll_angle = (int) ((float) roll_angle_min + ((float) (roll_angle_max - roll_angle_min) * percent) / 100.0f);
+	current_roll_angle = (int) (ROLL_ANGLE_MIN + ((ROLL_ANGLE_MAX - ROLL_ANGLE_MIN) * percent) / 100.0f);
 }
 
 /**
@@ -203,7 +209,9 @@ float read_potentiometer(const int channel) {
  * @param value Raw ADC value.
  * @return Percentage value scaled between 0.0 and 100.0.
  */
-float scale_adc_to_percent(const float value) { return ((float) value / 1023.0f) * 100.0f; }
+float scale_adc_to_percent(const float value) {
+	return ((float) value / 1023.0f) * 100.0f;
+}
 
 /* ********************************************************* */
 /* ******************** OUTPUT HANDLING ******************** */
@@ -231,18 +239,13 @@ void display_altitude() {
 	int *bits_hundreds = decimal_to_binary(hundreds, bits_display);
 
 	/* Send bits in order: units, tens, hundreds */
-	send_bits_to_display(bits_units, 4, 0, 1);
-	send_bits_to_display(bits_tens, 4, 0, 1);
-	send_bits_to_display(bits_hundreds, 4, 0, 1);
+	send_bits_to_display(bits_units, 4);
+	send_bits_to_display(bits_tens, 4);
+	send_bits_to_display(bits_hundreds, 4);
 
 	/* Pulse STB to send data to display */
 	PORTD |= (1 << 2);
 	PORTD &= ~(1 << 2);
-
-	/* Delay */
-	for (volatile long delay = 0; delay < 10000; delay++) {
-		asm volatile("nop");
-	}
 
 	/* Free allocated memory */
 	free(altitude_digits);
@@ -298,27 +301,21 @@ void display_roll() {
 	}
 
 	for (int row = 0; row < 8; row++) {
+		int rowData = ~(1 << row); /* Active LOW row selection */
 		int colData = 0;
 
-		// Build column byte for this row
+		/* Build column byte for this row */
 		for (int col = 0; col < 8; col++) {
 			if (roll_matrix[row][col] == 1) {
-				colData |= (1 << col); // Set bit
+				colData |= (1 << col);
 			}
 		}
 
-		int rowData = ~(1 << row); // Active LOW row selection
-
-		send_bits_to_matrix(rowData, colData, 3, 4);
+		send_bits_to_matrix(rowData, colData);
 
 		/* Pulse STB to send data to display */
-		PORTD |= (1 << 5);
-		PORTD &= ~(1 << 5);
-
-		/* Delay */
-		for (volatile long delay = 0; delay < 1000; delay++) {
-			asm volatile("nop");
-		}
+		PORTD |= (1 << ROLL_STB);
+		PORTD &= ~(1 << ROLL_STB);
 	}
 }
 
@@ -331,17 +328,13 @@ void display_roll() {
  *
  * Standard servos expect 1000µs (0°) to 2000µs (180°) pulse widths.
  *
- * @param x Input angle in degrees.
- * @param in_min Minimum angle (usually 0).
- * @param in_max Maximum angle (usually 180).
- * @param out_min Minimum pulse width (usually 1000).
- * @param out_max Maximum pulse width (usually 2000).
+ * @param angle Input angle in degrees.
  * @return Corresponding pulse width in microseconds.
  */
-long angle_to_pulse(long x, const long in_min, const long in_max, const long out_min, const long out_max) {
-	// FIXME: Motor angle is 11.2º greater
-	x = x - 11;
-	return (x - in_min) * (out_max - out_min) / (in_max - in_min) + out_min;
+long angle_to_pulse(long angle) {
+	// FIXME: Motor angle offset
+	angle -= MOTOR_ANGLE_OFFSET;
+	return angle * (PULSE_MAX - PULSE_MIN) / ANGLE_RANGE + PULSE_MIN;
 }
 
 /**
@@ -397,24 +390,22 @@ int *decimal_to_binary(const int decimal, const int n_bits) {
  *
  * @param bits Array of bits to send.
  * @param n_bits Number of bits to send.
- * @param channel_d Data pin index on PORTD.
- * @param channel_clk Clock pin index on PORTD.
  */
-void send_bits_to_display(const int *bits, const int n_bits, const unsigned int channel_d, const unsigned int channel_clk) {
+void send_bits_to_display(const int *bits, const int n_bits) {
 	/* Clear ports before setting new bits */
-	PORTD &= ~((1 << channel_d) | (1 << channel_clk));
+	PORTD &= ~((1 << ALT_D) | (1 << ALT_CLK));
 	/* Send bits to port */
 	for (int i = n_bits - 1; i >= 0; i--) {
 		if (bits[i]) {
-			PORTD |= (1 << channel_d);
+			PORTD |= (1 << ALT_D);
 		}
 		else {
-			PORTD &= ~(1 << channel_d);
+			PORTD &= ~(1 << ALT_D);
 		}
 
 		/* Clock pulse */
-		PORTD |= (1 << channel_clk);
-		PORTD &= ~(1 << channel_clk);
+		PORTD |= (1 << ALT_CLK);
+		PORTD &= ~(1 << ALT_CLK);
 	}
 }
 
@@ -426,50 +417,45 @@ void send_bits_to_display(const int *bits, const int n_bits, const unsigned int 
  *
  * @param row_byte Byte representing row selection bits (active low).
  * @param col_byte Byte representing column bits.
- * @param channel_d The data pin bit position on PORTD.
- * @param channel_clk The clock pin bit position on PORTD.
  */
-void send_bits_to_matrix(const int row_byte, const int col_byte, const int channel_d, const int channel_clk) {
+void send_bits_to_matrix(const int row_byte, const int col_byte) {
 	/* Clear ports before setting new bits */
-	PORTD &= ~((1 << channel_d) | (1 << channel_clk));
+	PORTD &= ~((1 << ROLL_D) | (1 << ROLL_CLK));
 
+	/* Send row byte to port */
 	for (int i = 0; i < 8; i++) {
-		// Clock LOW
-		PORTD &= ~(1 << channel_clk);
+		if (row_byte & (1 << i)) {
+			PORTD |= (1 << ROLL_D);
+		}
+		else {
+			PORTD &= ~(1 << ROLL_D);
+		}
 
-		// Set data bit
-		if (row_byte & (1 << i))
-			PORTD |= (1 << channel_d); // Set HIGH
-		else
-			PORTD &= ~(1 << channel_d); // Set LOW
-
-		// Clock HIGH to shift the bit
-		PORTD |= (1 << channel_clk);
+		/* Clock pulse */
+		PORTD |= (1 << ROLL_CLK);
+		PORTD &= ~(1 << ROLL_CLK);
 	}
 
+	/* Send column byte to port */
 	for (int i = 0; i < 8; i++) {
-		// Clock LOW
-		PORTD &= ~(1 << channel_clk);
+		if (col_byte & (1 << i)) {
+			PORTD |= (1 << ROLL_D);
+		}
+		else {
+			PORTD &= ~(1 << ROLL_D);
+		}
 
-		// Set data bit
-		if (col_byte & (1 << i))
-			PORTD |= (1 << channel_d); // Set HIGH
-		else
-			PORTD &= ~(1 << channel_d); // Set LOW
-
-		// Clock HIGH to shift the bit
-		PORTD |= (1 << channel_clk);
+		/* Clock pulse */
+		PORTD |= (1 << ROLL_CLK);
+		PORTD &= ~(1 << ROLL_CLK);
 	}
 }
 
 /**
  * Compute the reload value for a specified configuration.
  *
- * @param time_interval Time interval in milliseconds.
- * @param frequency_io Frequency of the microcontroller in milliseconds.
- * @param pre_scaler Pre-scaler value.
  * @return The appropriate reload value.
  */
-int get_reload_value(const int time_interval, const int frequency_io, const int pre_scaler) {
-	return 65536 - (time_interval * frequency_io) / pre_scaler;
+long get_reload_value() {
+	return 65536 - (TIMER1_PERIOD * FREQUENCY_IO) / TIMER1_PRESCALER;
 }
