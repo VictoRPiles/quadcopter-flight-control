@@ -11,13 +11,13 @@
  * @date 2025-05-17
  */
 
-# define ALTITUDE_SCALE 1000
-# define ALTITUDE_LOWER_LIMIT 0 /* Minimum allowed altitude (ground level) */
-# define ALTITUDE_UPPER_LIMIT 999 /* Maximum allowed altitude (ceiling) */
+#define ALTITUDE_SCALE 1000
+#define ALTITUDE_LOWER_LIMIT 0 /* Minimum allowed altitude (ground level) */
+#define ALTITUDE_UPPER_LIMIT 999 /* Maximum allowed altitude (ceiling) */
 int current_altitude = 500; /* Current altitude of the quadcopter */
 
-# define ROLL_ANGLE_MIN (-45) /* Minimum roll angle (e.g., full left tilt) */
-# define ROLL_ANGLE_MAX 45 /* Maximum roll angle (e.g., full right tilt) */
+#define ROLL_ANGLE_MIN (-45) /* Minimum roll angle (e.g., full left tilt) */
+#define ROLL_ANGLE_MAX 45 /* Maximum roll angle (e.g., full right tilt) */
 int current_roll_angle = 0; /* Current roll angle of the quadcopter */
 
 #define ANGLE_RANGE 180
