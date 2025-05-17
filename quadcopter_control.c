@@ -1,3 +1,16 @@
+/**
+ * @file quadcopter_control.c
+ * @brief Embedded control software for a quadcopter with altitude and roll stabilization.
+ *
+ * This program reads analog input from two potentiometers representing altitude and roll commands.
+ * It adjusts motor angles accordingly using PWM via Timer1 to maintain or change flight orientation.
+ * Feedback is provided via 7-segment display (altitude) and 8x8 matrix (roll angle).
+ *
+ * Target Platform: AVR Microcontroller (e.g., ATmega328P)
+ * @author Víctor Piles
+ * @date 2025-05-17
+ */
+
 # define ALTITUDE_SCALE 1000
 # define ALTITUDE_LOWER_LIMIT 0 /* Minimum allowed altitude (ground level) */
 # define ALTITUDE_UPPER_LIMIT 999 /* Maximum allowed altitude (ceiling) */
