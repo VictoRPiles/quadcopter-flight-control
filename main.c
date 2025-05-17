@@ -6,11 +6,11 @@ int current_roll_angle; /* Current roll angle of the quadcopter */
 int roll_angle_min; /* Minimum roll angle (e.g., full left tilt) */
 int roll_angle_max; /* Maximum roll angle (e.g., full right tilt) */
 
-/* Timer1 reload value for 20ms period, given 16µs tick with pre-scaler 8 */
-const int reload_value = get_reload_value(20000, 16, 8);
-
 long motor_angle_left = 0; /* Angle to command the left motor */
 long motor_angle_right = 0; /* Angle to command the right motor */
+
+/* Timer1 reload value for 20ms period, given 16µs tick with pre-scaler 8 */
+const int reload_value = get_reload_value(20000, 16, 8);
 
 /* **************************************************** */
 /* ******************* ENTRY POINT ******************** */
@@ -65,18 +65,6 @@ void loop() {
 		display_altitude();
 		display_roll();
 	}
-}
-
-/**
- * Compute the reload value for a specified configuration.
- *
- * @param time_interval Time interval in milliseconds.
- * @param frequency_io Frequency of the microcontroller in milliseconds.
- * @param pre_scaler Pre-scaler value.
- * @return The appropriate reload value.
- */
-int get_reload_value(const int time_interval, const int frequency_io, const int pre_scaler) {
-	return 65536 - (time_interval * frequency_io) / pre_scaler;
 }
 
 /**
@@ -253,6 +241,7 @@ void display_altitude() {
 
 	/* Delay */
 	for (volatile long delay = 0; delay < 10000; delay++) {
+		asm volatile("nop");
 	}
 
 	/* Free allocated memory */
@@ -266,7 +255,71 @@ void display_altitude() {
  * Displays the current roll angle on a matrix display.
  */
 void display_roll() {
-	//TODO: Display roll
+	int roll_neutral_matrix[8][8] = {
+		{0, 0, 0, 0, 0, 0, 0, 0},
+		{0, 0, 0, 0, 0, 0, 0, 0},
+		{0, 0, 0, 0, 0, 0, 0, 0},
+		{1, 1, 1, 1, 1, 1, 1, 1},
+		{1, 1, 1, 1, 1, 1, 1, 1},
+		{0, 0, 0, 0, 0, 0, 0, 0},
+		{0, 0, 0, 0, 0, 0, 0, 0},
+		{0, 0, 0, 0, 0, 0, 0, 0},
+	};
+	int roll_right_matrix[8][8] = {
+		{0, 0, 0, 0, 0, 0, 0, 1},
+		{0, 0, 0, 0, 0, 0, 1, 0},
+		{0, 0, 0, 0, 0, 1, 0, 0},
+		{0, 0, 0, 1, 1, 0, 0, 0},
+		{0, 0, 0, 1, 1, 0, 0, 0},
+		{0, 0, 1, 0, 0, 0, 0, 0},
+		{0, 1, 0, 0, 0, 0, 0, 0},
+		{1, 0, 0, 0, 0, 0, 0, 0},
+	};
+	int roll_left_matrix[8][8] = {
+		{1, 0, 0, 0, 0, 0, 0, 0},
+		{0, 1, 0, 0, 0, 0, 0, 0},
+		{0, 0, 1, 0, 0, 0, 0, 0},
+		{0, 0, 0, 1, 1, 0, 0, 0},
+		{0, 0, 0, 1, 1, 0, 0, 0},
+		{0, 0, 0, 0, 0, 1, 0, 0},
+		{0, 0, 0, 0, 0, 0, 1, 0},
+		{0, 0, 0, 0, 0, 0, 0, 1},
+	};
+
+	int roll_matrix[8][8];
+	if (current_roll_angle < 0) {
+		memcpy(roll_matrix, roll_left_matrix, sizeof(roll_matrix));
+	}
+	else if (current_roll_angle > 0) {
+		memcpy(roll_matrix, roll_right_matrix, sizeof(roll_matrix));
+	}
+	else {
+		memcpy(roll_matrix, roll_neutral_matrix, sizeof(roll_matrix));
+	}
+
+	for (int row = 0; row < 8; row++) {
+		int colData = 0;
+
+		// Build column byte for this row
+		for (int col = 0; col < 8; col++) {
+			if (roll_matrix[row][col] == 1) {
+				colData |= (1 << col); // Set bit
+			}
+		}
+
+		int rowData = ~(1 << row); // Active LOW row selection
+
+		send_bits_to_matrix(rowData, colData, 3, 4);
+
+		/* Pulse STB to send data to display */
+		PORTD |= (1 << 5);
+		PORTD &= ~(1 << 5);
+
+		/* Delay */
+		for (volatile long delay = 0; delay < 1000; delay++) {
+			asm volatile("nop");
+		}
+	}
 }
 
 /* *************************************************** */
@@ -363,4 +416,60 @@ void send_bits_to_display(const int *bits, const int n_bits, const unsigned int 
 		PORTD |= (1 << channel_clk);
 		PORTD &= ~(1 << channel_clk);
 	}
+}
+
+/**
+ * Sends row and column bytes to a matrix display using PORTD pins.
+ *
+ * This function shifts out 8 bits each for row and column data,
+ * toggling the clock pin for each bit. Data is sent LSB first.
+ *
+ * @param row_byte Byte representing row selection bits (active low).
+ * @param col_byte Byte representing column bits.
+ * @param channel_d The data pin bit position on PORTD.
+ * @param channel_clk The clock pin bit position on PORTD.
+ */
+void send_bits_to_matrix(const int row_byte, const int col_byte, const int channel_d, const int channel_clk) {
+	/* Clear ports before setting new bits */
+	PORTD &= ~((1 << channel_d) | (1 << channel_clk));
+
+	for (int i = 0; i < 8; i++) {
+		// Clock LOW
+		PORTD &= ~(1 << channel_clk);
+
+		// Set data bit
+		if (row_byte & (1 << i))
+			PORTD |= (1 << channel_d); // Set HIGH
+		else
+			PORTD &= ~(1 << channel_d); // Set LOW
+
+		// Clock HIGH to shift the bit
+		PORTD |= (1 << channel_clk);
+	}
+
+	for (int i = 0; i < 8; i++) {
+		// Clock LOW
+		PORTD &= ~(1 << channel_clk);
+
+		// Set data bit
+		if (col_byte & (1 << i))
+			PORTD |= (1 << channel_d); // Set HIGH
+		else
+			PORTD &= ~(1 << channel_d); // Set LOW
+
+		// Clock HIGH to shift the bit
+		PORTD |= (1 << channel_clk);
+	}
+}
+
+/**
+ * Compute the reload value for a specified configuration.
+ *
+ * @param time_interval Time interval in milliseconds.
+ * @param frequency_io Frequency of the microcontroller in milliseconds.
+ * @param pre_scaler Pre-scaler value.
+ * @return The appropriate reload value.
+ */
+int get_reload_value(const int time_interval, const int frequency_io, const int pre_scaler) {
+	return 65536 - (time_interval * frequency_io) / pre_scaler;
 }
