@@ -2,4 +2,4 @@
 
 Fly-by-wire control of a Quadcopter using Arduino
 
-![img.png](img.png)
+![simulation.png](readme/simulation.png)
