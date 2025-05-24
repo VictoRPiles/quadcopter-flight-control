@@ -208,7 +208,7 @@ void control_motors(const float speed_altitude, const float speed_roll) {
  */
 float read_potentiometer(const int channel) {
 	ADMUX = (1 << REFS0) | (channel & 0x0F); /* AVCC as reference, select ADC channel */
-	ADCSRA |= (1 << ADSC); /* Start conversion */
+	ADCSRA |= (1 << ADSC) | (1 << ADPS0) | (1 << ADPS1) | (1 << ADPS2); /* Start conversion, pre-scaler 128 */
 	while (ADCSRA & (1 << ADSC)) /* Wait for conversion to finish */
 		;
 
